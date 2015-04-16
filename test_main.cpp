@@ -25,7 +25,7 @@ int main(int argc, char **argv)
     sscanf(argv[3], "%x", &reg_address);
     sscanf(argv[4], "%d", &r_w);
 
-    Userspace_i2c i2c_ctrl(argv[1], slave_address); 
+    Userspace_i2c i2c_ctrl(argv[1], slave_address);
 
 
     if (r_w == 0) {

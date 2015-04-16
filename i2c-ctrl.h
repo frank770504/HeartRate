@@ -26,13 +26,13 @@ public:
 	int reg_read(unsigned char reg, unsigned char *data);
 	int reg_write(unsigned char reg, unsigned char data);
 	//unsigned char cmd[MAX_BUF];
-	
+
 private:
 	char* I2C_DEV;
 	unsigned char ADDR;
 	const static int MAX_BUF = 100;
-	const static int FIFO_SIZE = 8;
-	const static int FIFO_SIZE_M1 = FIFO_SIZE - 1;
+	//const static int FIFO_SIZE = 8;
+	//const static int FIFO_SIZE_M1 = FIFO_SIZE - 1;
 	int i2c_write(unsigned char dev_addr, unsigned char *buf, int length);
 	int i2c_read(unsigned char dev_addr, unsigned char *buf, int length);
 };
