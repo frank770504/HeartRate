@@ -1,6 +1,10 @@
 #include "i2c-ctrl.h"
 #include <pixart_8001_1000.h>
 #include "led_ctrl.h"
+#include "sys/time.h"
+extern "C" {
+#include "pxialg.h"
+}
 
 #define I2C_DEV "/dev/i2c-2"
 #define HRM_ADDR 0x33
@@ -11,15 +15,18 @@
 typedef unsigned char u8;
 typedef unsigned int u32;
 
-Userspace_i2c i2c_hrm(I2C_DEV, HRM_ADDR);
-Userspace_i2c i2c_iner(I2C_DEV, INERT_ADDR);
+struct timeval tv;
+
+Userspace_i2c i2c_hrm((char*)I2C_DEV, HRM_ADDR);
+Userspace_i2c i2c_iner((char*)I2C_DEV, INERT_ADDR);
 
 typedef struct {
         u8 HRD_Data[13] ;
-        u32 MEMS_Data[3] ;
+        float MEMS_Data[3] ;
 }ppg_mems_data_t;
 
 static ppg_mems_data_t _ppg_mems_data[FIFO_SIZE] ;
+static ppg_mems_data_t test_ppg_mems_data;
 
 static void bank_select(bank_e bank);
 
@@ -85,12 +92,12 @@ int pixart_init()
 	        if((bank == 0) && (init_ppg_register_array_1000[i][0] == 0x17) )
 	        {
 	                //read and write bit7=1
-	                        ret = i2c_hrm.reg_read(0x17, &data);
-	                        if(ret == 0)
-	                        {
-	                                data |= 0x80 ;
-	                                ret = i2c_hrm.reg_write(0x17,data);
-	                        }
+	                ret = i2c_hrm.reg_read(0x17, &data);
+	                if(ret == 0)
+	                {
+	                        data |= 0x80 ;
+	                        ret = i2c_hrm.reg_write(0x17,data);
+	                }
 	        }
 	        else
 	        {
@@ -104,12 +111,18 @@ int pixart_init()
 	return ret;
 }
 
+static u8 Frame_Count = 0 ;
 static void ofn_ppg(void)
 {
-	static u8 Frame_Count = 0 ;
 	u8 touch_flag = 0 ;
-	u8 data ;
+	u8 data;
+	u32 mtime_p = 0;
+	u32 mtime_n = 0;
 	int _write_index = 0; //use the fix buffer
+	int ret = 0;
+	float myHR = 0.0;
+	unsigned char ready_flag = 0;
+	unsigned char motion_flag = 0;
 
 	if(1)
 	{
@@ -118,56 +131,63 @@ static void ofn_ppg(void)
 
 		touch_flag &= 0x80  ;
 		led_ctrl(touch_flag);
-		
+
 		bank_select(BANK1);
 		i2c_hrm.reg_read(0x68, &data);
-		_ppg_mems_data[_write_index].HRD_Data[0] = data & 0x0f ;
+		test_ppg_mems_data.HRD_Data[0] = data & 0x0f ;
 
-		if(_ppg_mems_data[_write_index].HRD_Data[0] == 0)
+		if(test_ppg_mems_data.HRD_Data[0] == 0)
 		{
-			printf("11111111111\r\n");
+			printf("no touch");
 			bank_select(BANK0);
-			usleep(10000);
 		}
 		else
 		{
-			printf("2222222222\r\n");
+			printf("touched");
 			int tmp = 0;
-			i2c_hrm.reg_burst_read(0x64, &(_ppg_mems_data[_write_index].HRD_Data[1]), 4);
-			i2c_hrm.reg_burst_read(0x1A, &(_ppg_mems_data[_write_index].HRD_Data[5]), 3);
-			_ppg_mems_data[_write_index].HRD_Data[8] = Frame_Count++;
-			_ppg_mems_data[_write_index].HRD_Data[9] = (unsigned)time(NULL);
-			_ppg_mems_data[_write_index].HRD_Data[10] = get_led_current_change_flag() ;
+			i2c_hrm.reg_burst_read(0x64, &(test_ppg_mems_data.HRD_Data[1]), 4);
+			i2c_hrm.reg_burst_read(0x1A, &(test_ppg_mems_data.HRD_Data[5]), 3);
+			test_ppg_mems_data.HRD_Data[8] = Frame_Count++;
+			gettimeofday(&tv, NULL);
+			mtime_n = 1000 * tv.tv_sec + tv.tv_usec/1000;
+			test_ppg_mems_data.HRD_Data[9] = mtime_n - mtime_p;
+			mtime_p = mtime_n;
+			test_ppg_mems_data.HRD_Data[10] = get_led_current_change_flag();
 
-			_ppg_mems_data[_write_index].HRD_Data[11] = touch_flag ;
-			_ppg_mems_data[_write_index].HRD_Data[12] = _ppg_mems_data[_write_index].HRD_Data[6] ;
+			test_ppg_mems_data.HRD_Data[11] = touch_flag ;
+			test_ppg_mems_data.HRD_Data[12] = test_ppg_mems_data.HRD_Data[6];
 		}
 	}
-	//print result
-	printf("%u, raw (%d)(%d)(%d)(%d)\r\n", _ppg_mems_data[_write_index].HRD_Data[9]
-						, _ppg_mems_data[_write_index].HRD_Data[1]
-						, _ppg_mems_data[_write_index].HRD_Data[2]
-						, _ppg_mems_data[_write_index].HRD_Data[3]
-						, _ppg_mems_data[_write_index].HRD_Data[4]);
-	printf("%u, alg (%d)(%d)(%d)\r\n\r\n", _ppg_mems_data[_write_index].HRD_Data[9]
-						, _ppg_mems_data[_write_index].HRD_Data[5]
-						, _ppg_mems_data[_write_index].HRD_Data[6]
-						, _ppg_mems_data[_write_index].HRD_Data[7]);
+	test_ppg_mems_data.MEMS_Data[0] = 0;
+	test_ppg_mems_data.MEMS_Data[1] = 0;
+	test_ppg_mems_data.MEMS_Data[2] = 0;
+	ret = PxiAlg_Process(test_ppg_mems_data.HRD_Data, test_ppg_mems_data.MEMS_Data);
+	if(ret==FLAG_DATA_READY)
+	{
+		PxiAlg_HrGet(&myHR);
+		ready_flag = PxiAlg_GetReadyFlag();
+		motion_flag = PxiAlg_GetMotionFlag();
+	}
+	if(myHR!=0.0)
+		printf(" -- %d||HR rt is %f\r\n", mtime_n, myHR);
+	else
+		printf("\r\n");
 }
 
 static void pixart_work()
 {
 	pah8001_power_down(0);
 
-//	printk(">>>%s (%d)\n", __func__, __LINE__);
+	PxiAlg_SetMemsScale(0);
+	PxiAlg_EnableFastOutput(0);
+	PxiAlg_EnableAutoMode(1);
+	PxiAlg_EnableMotionMode(0);
 	while(1)
 	{
 		ofn_ppg();
-		//printf("%d %u\r\n", time(NULL), time(NULL));
-		usleep(100000);
+		usleep(40000);
 	}
 	pah8001_power_down(1);
-//	printk("<<< %s (%d)\n", __func__, __LINE__);
 }
 
 int main()
@@ -180,7 +200,6 @@ int main()
 		printf("hrm module init fail\r\n");
 		return ret;
 	}
-
 	//execute in infinit loop
 	pixart_work();
 	return 0;
