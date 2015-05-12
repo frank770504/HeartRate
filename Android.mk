@@ -8,10 +8,10 @@ LOCAL_MODULE := HRMTest
 
 LOCAL_SRC_FILES += \
 	i2c-ctrl.cpp \
-	i2c-ctrl.h \
 	heartrate.cpp \
-	pixart_8001_1000.h \
 	led_ctrl.cpp \
-	led_ctrl.h \
+
+LOCAL_LDLIBS += $(LOCAL_PATH)/libpaw8001motion.so
+
 
 include $(BUILD_EXECUTABLE)
